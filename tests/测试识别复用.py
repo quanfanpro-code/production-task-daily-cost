@@ -75,6 +75,37 @@ class Reuse(unittest.TestCase):
         self.assertEqual(calls, [810])
         self.assertTrue(Path(value['pages'][0]['image']).is_file())
 
+    def test_单文件只处理本人且目录接续不重识别(self):
+        path=self.source/'合成.pdf'
+        (self.source/'另册.pdf').write_bytes(path.read_bytes())
+        calls=[]
+        def recognize(image):
+            calls.append(1)
+            return [[[[0,0],[10,0],[10,10],[0,10]],'工序日期文字',.9]],None
+        with patch('rapidocr_onnxruntime.RapidOCR',return_value=recognize):
+            first=self.mod.prepare(path,self.output)
+            again=self.mod.prepare(self.source,self.output,exclude=['另册.pdf'])
+        self.assertEqual(list(first['files']),['合成.pdf'])
+        self.assertEqual(first['source_root'],str(self.source.resolve()))
+        self.assertEqual(calls,[1])
+        self.assertEqual(first['pages'],again['pages'])
+        view=json.loads((self.output/'提取视图.json').read_text(encoding='utf-8'))
+        self.assertEqual(view['files'],first['files'])
+        self.assertEqual(view['pages'][0]['text'],'工序日期文字')
+        self.assertEqual(view['pages'][0]['image'],first['pages'][0]['image'])
+        self.assertNotIn('ocr',view['pages'][0])
+        self.assertNotIn('ocr_regions',view['pages'][0])
+
+    def test_无效原件不再零页成功(self):
+        with self.assertRaises(FileNotFoundError):
+            self.mod.prepare(self.base/'不存在.pdf',self.output)
+        wrong=self.base/'说明.txt';wrong.write_text('说明',encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'PDF'):
+            self.mod.prepare(wrong,self.output)
+        empty=self.base/'空目录';empty.mkdir()
+        with self.assertRaisesRegex(ValueError,'没有可处理'):
+            self.mod.prepare(empty,self.output)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -8,7 +8,7 @@ import re
 
 from 文件保护 import digest, safe_child, separate_output, write_bytes, write_json
 
-VERSION='2026-10-15.2'
+VERSION='2026-10-15.3'
 PAGE_VERSION='2026-10-15.1'  # 保持已有页缓存身份，范围升级不重做成功识别。
 
 
@@ -17,8 +17,18 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
     import pymupdf
     from PIL import Image
     from 方向识别 import 识别器
-    source,output=separate_output(source,output)
+    source=Path(source).resolve()
+    if not source.exists():raise FileNotFoundError('原件路径不存在：'+str(source))
+    if source.is_file():
+        if source.suffix.lower()!='.pdf':raise ValueError('单文件输入必须是PDF：'+str(source))
+        paths=[source]
+        source,output=separate_output(source.parent,output)
+    else:
+        source,output=separate_output(source,output)
+        paths=sorted(source.rglob('*.pdf'))
     excluded=[safe_child(source,p) for p in (exclude or [])]
+    paths=[p for p in paths if not p.is_relative_to(output) and not any(p.is_relative_to(e) for e in excluded)]
+    if not paths:raise ValueError('指定范围内没有可处理的PDF，请检查原件路径与排除目录')
     model=Path(__file__).parent/'models/rapid_orientation.onnx'
     model_problem=''
     try:
@@ -33,8 +43,7 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
     seen=set()
     reader=None
     files={};pages=[];file_errors=[]
-    for path in sorted(source.rglob('*.pdf')):
-        if path.is_relative_to(output) or any(path.is_relative_to(p) for p in excluded):continue
+    for path in paths:
         rel=path.relative_to(source).as_posix()
         try:
             sha=digest(path);doc=pymupdf.open(path)
@@ -126,6 +135,12 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
         'partial':bool(limit),'file_errors':file_errors,'model_problem':model_problem,'excluded':exclude or [],
         'notice':'候选不是最终归属；agent核对原图后另写拆分方案。文件错误须单独汇报，不能冒充全批已完成。'}
     write_json(output/'准备索引.json',index)
+    # 提取时只读一份精简视图，坐标与区域缓存仍在准备索引中供实际疑点查阅。
+    fields=('source_file','page','image','rotation','candidate_type','number_candidates',
+            'text','ocr_coverage','direction_uncertain','problem')
+    write_json(output/'提取视图.json',{'source_root':str(source),'files':files,
+               'pages':[{k:p[k] for k in fields if k in p} for p in pages],
+               'file_errors':file_errors,'partial':bool(limit),'model_problem':model_problem})
     return index
 
 
@@ -218,4 +233,8 @@ if __name__=='__main__':
     else:
         if not args.plan:ap.error('split需要--plan')
         result=split(json.loads(Path(args.plan).read_text(encoding='utf-8-sig')),args.output)
-    print(json.dumps({'pages':len(result['pages']),'output':args.output},ensure_ascii=False))
+    summary={'pages':len(result['pages']),'output':args.output}
+    if args.action=='prepare':
+        summary.update(files=len(result['files']),view=str(Path(args.output).resolve()/'提取视图.json'),
+                       file_errors=result['file_errors'],partial=result['partial'],model_problem=result['model_problem'])
+    print(json.dumps(summary,ensure_ascii=False))

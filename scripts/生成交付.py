@@ -129,4 +129,9 @@ if __name__=='__main__':
     args=ap.parse_args()
     data=json.loads(Path(args.input).read_text(encoding='utf-8-sig'))
     result=build(data['tasks'] if isinstance(data,dict) else data)
-    print(write_delivery(result,args.output))
+    path=write_delivery(result,args.output)
+    print(json.dumps({'workbook':str(path.resolve()),'verified':True,'tasks':len(result['tasks']),
+                      'normal_rows':len(result['normal']),'abnormal_rows':len(result['abnormal']),
+                      'abnormal_tasks':[t for t in result['tasks'] if t['abnormal']],
+                      'blank_tasks':[t['task_no'] for t in result['tasks'] if not t['row_count']],
+                      'warnings':result['warnings']},ensure_ascii=False))

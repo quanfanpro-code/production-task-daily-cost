@@ -146,6 +146,22 @@ class Rules(unittest.TestCase):
 
 
 class Files(unittest.TestCase):
+    def test_生成入口返回已验证汇总及特殊情况(self):
+        import subprocess
+        base=Path(tempfile.mkdtemp(prefix='交付入口测试_'))
+        value=task([record()],warnings=['合成已处理说明'])
+        source=base/'核定.json';source.write_text(json.dumps({'tasks':[value]},ensure_ascii=False),encoding='utf-8')
+        run=subprocess.run([sys.executable,'-X','utf8','-B',str(ROOT/'scripts/生成交付.py'),
+                            '--input',str(source),'--output',str(base/'交付')],
+                           capture_output=True,text=True,encoding='utf-8',check=True)
+        summary=json.loads(run.stdout)
+        self.assertTrue(summary['verified'])
+        self.assertTrue(Path(summary['workbook']).is_file())
+        self.assertEqual(summary['tasks'],1)
+        self.assertEqual(summary['normal_rows'],3)
+        self.assertEqual(summary['abnormal_rows'],0)
+        self.assertEqual(summary['warnings'],[{'task_no':'SAMPLE-001','message':'合成已处理说明'}])
+
     def test_明确排除旧输出避免重复识别(self):
         from 预处理拆分 import prepare
         import pymupdf
