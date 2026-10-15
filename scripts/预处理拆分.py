@@ -8,10 +8,12 @@ import re
 
 from 文件保护 import digest, safe_child, separate_output, write_bytes, write_json
 
-VERSION='2026-10-15.1'
+VERSION='2026-10-15.2'
+PAGE_VERSION='2026-10-15.1'  # 保持已有页缓存身份，范围升级不重做成功识别。
 
 
-def prepare(source, output, limit=None, no_ocr=False, exclude=None):
+def prepare(source, output, limit=None, no_ocr=False, exclude=None,
+            ocr_scope='header', retry_failed=False, page_list=None):
     import pymupdf
     from PIL import Image
     from 方向识别 import 识别器
@@ -20,9 +22,15 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None):
     model=Path(__file__).parent/'models/rapid_orientation.onnx'
     model_problem=''
     try:
-        detector=识别器(model);model_hash=digest(model)
+        model_hash=digest(model)
     except Exception as exc:
-        detector=None;model_hash='unavailable';model_problem=f'方向模型不可用，保留原方向供agent查看：{exc}'
+        model_hash='unavailable';model_problem=f'方向模型不可用，保留原方向供agent查看：{exc}'
+    detector=None;detector_attempted=False
+    if ocr_scope not in ('header','full'):raise ValueError('识别范围必须为header或full')
+    selected=None if page_list is None else {(p['source_file'],p['page']) for p in page_list}
+    if selected is not None and any(type(n) is not int or n<1 for _,n in selected):
+        raise ValueError('指定原页必须为正整数')
+    seen=set()
     reader=None
     files={};pages=[];file_errors=[]
     for path in sorted(source.rglob('*.pdf')):
@@ -38,52 +46,82 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None):
             files[rel]={'pages':len(doc),'sha256':sha}
             for n,page in enumerate(doc,1):
                 if limit and len(pages)>=limit:break
-                key=hashlib.sha256(f'{VERSION}|{sha}|{n}|1800|{not no_ocr}|{model_hash}'.encode()).hexdigest()
+                seen.add((rel,n))
+                key=hashlib.sha256(f'{PAGE_VERSION}|{sha}|{n}|1800|True|{model_hash}'.encode()).hexdigest()
                 cache=output/'缓存'/f'{key}.json'
-                cache_problem=''
-                if cache.exists():
-                    try:item=json.loads(cache.read_text(encoding='utf-8'))
+                legacy_key=hashlib.sha256(f'{PAGE_VERSION}|{sha}|{n}|1800|False|{model_hash}'.encode()).hexdigest()
+                prior=cache if cache.exists() else output/'缓存'/f'{legacy_key}.json'
+                cache_problem='';item={}
+                if prior.exists():
+                    try:
+                        item=json.loads(prior.read_text(encoding='utf-8'))
+                        if not isinstance(item,dict) or item.get('sha256')!=sha:raise ValueError('缓存来源不符')
                     except (ValueError,OSError):
                         item={};cache_problem='缓存损坏，已重新生成；'
-                    # 同内容不同文件共用识别，归属仍逐页登记。
-                    item.update(source_file=rel,page=n)
-                    if item.get('image') and Path(item['image']).is_file():
-                        pages.append(item);continue
-                try:
-                    pix=page.get_pixmap(matrix=pymupdf.Matrix(1800/max(page.rect.width,page.rect.height),1800/max(page.rect.width,page.rect.height)),alpha=False)
-                    image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
-                except Exception as exc:
-                    pages.append({'source_file':rel,'page':n,'sha256':sha,'problem':'页面渲染失败：'+str(exc),'image':None});continue
-                from 方向识别 import 判断
-                try:direction=detector.predict(image) if detector else 判断(None,0.,model_problem)
-                except Exception as exc:direction=判断(None,0.,'方向判断失败，保留原方向供agent查看：'+str(exc))
-                correction=direction.rotation or 0
-                upright=image.rotate(-correction,expand=True)
-                jpg=output/'页面'/f'{key}.jpg';buf=io.BytesIO();upright.save(buf,format='JPEG',quality=90)
-                write_bytes(jpg,buf.getvalue())
-                try:text=page.get_text().strip()
-                except Exception:text=''
-                ocr=[];problem=cache_problem
-                if len(text)<30 and not no_ocr:
+                try:native=page.get_text().strip()
+                except Exception:native=''
+                regions=item.get('ocr_regions',{})
+                if 'ocr_regions' not in item and item and len(native)<30 and prior==cache:
+                    if '粗识别失败' in item.get('problem',''):
+                        regions={'header':{'status':'failed','rows':[],'error':item['problem']}}
+                    elif item.get('ocr') or not item.get('problem'):
+                        regions={'header':{'status':'ok','rows':item.get('ocr',[]),'error':''}}
+                wanted=[] if no_ocr or (selected is not None and (rel,n) not in selected) or len(native)>=30 else ['header']
+                if wanted and ocr_scope=='full':wanted.append('body')
+                pending=[name for name in wanted if name not in regions or
+                         (regions[name]['status']=='failed' and retry_failed)]
+                if not retry_failed and any(r['status']=='failed' for r in regions.values()):pending=[]
+                upright=None
+                if not item.get('image') or not Path(item['image']).is_file():
+                    try:
+                        pix=page.get_pixmap(matrix=pymupdf.Matrix(1800/max(page.rect.width,page.rect.height),1800/max(page.rect.width,page.rect.height)),alpha=False)
+                        image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
+                    except Exception as exc:
+                        pages.append({'source_file':rel,'page':n,'sha256':sha,'problem':'页面渲染失败：'+str(exc),'image':None});continue
+                    from 方向识别 import 判断
+                    if not detector_attempted:
+                        detector_attempted=True
+                        try:detector=识别器(model)
+                        except Exception as exc:model_problem=f'方向模型不可用，保留原方向供agent查看：{exc}'
+                    try:direction=detector.predict(image) if detector else 判断(None,0.,model_problem)
+                    except Exception as exc:direction=判断(None,0.,'方向判断失败，保留原方向供agent查看：'+str(exc))
+                    correction=direction.rotation or 0
+                    upright=image.rotate(-correction,expand=True)
+                    jpg=output/'页面'/f'{key}.jpg';buf=io.BytesIO();upright.save(buf,format='JPEG',quality=90)
+                    write_bytes(jpg,buf.getvalue())
+                    item.update(rotation=correction,direction_uncertain=direction.rotation is None,
+                                direction_reason=direction.reason,direction_confidence=direction.confidence,image=str(jpg))
+                if pending and upright is None:
+                    with Image.open(item['image']) as im:upright=im.convert('RGB')
+                for name in pending:
+                    top=0 if name=='header' else round(upright.height*.45)
+                    bottom=round(upright.height*.45) if name=='header' else upright.height
                     try:
                         if reader is None:
                             from rapidocr_onnxruntime import RapidOCR
                             reader=RapidOCR()
                         import numpy as np
-                        # 页面顶部用于找任务边界；保留框位置，不把局部文字当整页正文。
-                        header=upright.crop((0,0,upright.width,round(upright.height*.45)))
-                        rows,_=reader(np.asarray(header)[:,:,::-1])
-                        ocr=rows or [];text='\n'.join(str(r[1]) for r in ocr)
+                        crop=upright.crop((0,top,upright.width,bottom))
+                        rows,_=reader(np.asarray(crop)[:,:,::-1])
+                        shifted=[[[[float(x),float(y)+top] for x,y in row[0]],str(row[1]),float(row[2])] for row in (rows or [])]
+                        regions[name]={'status':'ok','rows':shifted,'error':''}
                     except Exception as exc:
-                        problem=f'粗识别失败，需agent看图继续：{type(exc).__name__}: {exc}'
+                        regions[name]={'status':'failed','rows':[],'error':f'{type(exc).__name__}: {exc}'}
+                        break
+                ocr=[r for name in ('header','body') for r in regions.get(name,{}).get('rows',[])]
+                text=native if len(native)>=30 else ('\n'.join(str(r[1]) for r in ocr) or native)
+                coverage='full' if len(native)>=30 or all(regions.get(k,{}).get('status')=='ok' for k in ('header','body')) else 'header' if regions.get('header',{}).get('status')=='ok' else 'none'
+                problem=cache_problem+'；'.join('识别失败，保留成功结果，诊断后可显式重试：'+r['error'] for r in regions.values() if r['status']=='failed')
                 title='生产计划' if ('生产' in text and ('任务' in text or '计划' in text)) else '候选附件'
                 numbers=sorted(set(re.findall(r'(?<!\d)\d{8}[-－]?\d{1,6}(?!\d)',text)))
-                item={'source_file':rel,'page':n,'sha256':sha,'rotation':correction,
-                      'direction_uncertain':direction.rotation is None,'direction_reason':direction.reason,
-                      'direction_confidence':direction.confidence,'image':str(jpg),
-                      'candidate_type':title,'number_candidates':numbers,'text':text,'ocr':ocr,'problem':problem}
+                item.update(source_file=rel,page=n,sha256=sha,candidate_type=title,
+                            number_candidates=numbers,text=text,ocr=ocr,problem=problem,
+                            ocr_regions=regions,ocr_coverage=coverage,
+                            text_source='pdf_text' if len(native)>=30 else 'local_ocr',
+                            ocr_engine='RapidOCR 本机默认参数',page_cache_key=key)
                 write_json(cache,item);pages.append(item)
         if limit and len(pages)>=limit:break
+    if selected is not None and selected-seen:raise ValueError('指定页不在本次原件范围内：'+str(sorted(selected-seen)))
     index={'version':VERSION,'source_root':str(source),'files':files,'pages':pages,
         'partial':bool(limit),'file_errors':file_errors,'model_problem':model_problem,'excluded':exclude or [],
         'notice':'候选不是最终归属；agent核对原图后另写拆分方案。文件错误须单独汇报，不能冒充全批已完成。'}
@@ -168,10 +206,15 @@ if __name__=='__main__':
     ap.add_argument('action',choices=['prepare','split']);ap.add_argument('--source');ap.add_argument('--plan');ap.add_argument('--output',required=True)
     ap.add_argument('--limit-pages',type=int);ap.add_argument('--no-ocr',action='store_true')
     ap.add_argument('--exclude',action='append',default=[],help='排除原件目录下已确认的旧输出子目录，可重复指定')
+    ap.add_argument('--ocr-scope',choices=['header','full'],default='header',help='整页只补未覆盖区域，已有识别不重复请求')
+    ap.add_argument('--retry-failed',action='store_true',help='诊断后仅补失败区域，默认不原样重试')
+    ap.add_argument('--page-list',help='需补读的原件页JSON列表，字段source_file、page；仍复用同一工作目录')
     args=ap.parse_args()
     if args.action=='prepare':
         if not args.source:ap.error('prepare需要--source')
-        result=prepare(args.source,args.output,args.limit_pages,args.no_ocr,args.exclude)
+        chosen=json.loads(Path(args.page_list).read_text(encoding='utf-8-sig')) if args.page_list else None
+        result=prepare(args.source,args.output,args.limit_pages,args.no_ocr,args.exclude,
+                       args.ocr_scope,args.retry_failed,chosen)
     else:
         if not args.plan:ap.error('split需要--plan')
         result=split(json.loads(Path(args.plan).read_text(encoding='utf-8-sig')),args.output)

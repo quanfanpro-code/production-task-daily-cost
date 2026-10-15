@@ -158,5 +158,19 @@
     "skill_hashes_unchanged": true,
     "commit_after": "92450ad5cdcc9301dd0931995dd319934851885b",
     "scope": "3例均为合成资料，其中第3例为含文字层的合成PDF；不是整批真实手写识别验证。"
+  },
+  "latest_small_change": {
+    "date": "2026-10-15",
+    "preparation_version": "2026-10-15.2",
+    "new_reuse_checks": 3,
+    "existing_checks": 30,
+    "exit_codes": [
+      0,
+      0
+    ],
+    "smoke": "原页清单、文字层复用、越界拒绝通过",
+    "concurrency_policy": "最多2个在途；服务失败退1个；同一轮不自动升回",
+    "online_service_tested": false,
+    "historical_score_only": 80.5
   }
 }
