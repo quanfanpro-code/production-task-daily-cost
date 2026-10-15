@@ -11,11 +11,12 @@ from 文件保护 import digest, safe_child, separate_output, write_bytes, write
 VERSION='2026-10-15.1'
 
 
-def prepare(source, output, limit=None, no_ocr=False):
+def prepare(source, output, limit=None, no_ocr=False, exclude=None):
     import pymupdf
     from PIL import Image
     from 方向识别 import 识别器
     source,output=separate_output(source,output)
+    excluded=[safe_child(source,p) for p in (exclude or [])]
     model=Path(__file__).parent/'models/rapid_orientation.onnx'
     model_problem=''
     try:
@@ -25,7 +26,7 @@ def prepare(source, output, limit=None, no_ocr=False):
     reader=None
     files={};pages=[];file_errors=[]
     for path in sorted(source.rglob('*.pdf')):
-        if path.is_relative_to(output):continue
+        if path.is_relative_to(output) or any(path.is_relative_to(p) for p in excluded):continue
         rel=path.relative_to(source).as_posix()
         try:
             sha=digest(path);doc=pymupdf.open(path)
@@ -84,7 +85,7 @@ def prepare(source, output, limit=None, no_ocr=False):
                 write_json(cache,item);pages.append(item)
         if limit and len(pages)>=limit:break
     index={'version':VERSION,'source_root':str(source),'files':files,'pages':pages,
-        'partial':bool(limit),'file_errors':file_errors,'model_problem':model_problem,
+        'partial':bool(limit),'file_errors':file_errors,'model_problem':model_problem,'excluded':exclude or [],
         'notice':'候选不是最终归属；agent核对原图后另写拆分方案。文件错误须单独汇报，不能冒充全批已完成。'}
     write_json(output/'准备索引.json',index)
     return index
@@ -166,10 +167,11 @@ if __name__=='__main__':
     ap=argparse.ArgumentParser(description='准备扫描页或执行核定拆分方案')
     ap.add_argument('action',choices=['prepare','split']);ap.add_argument('--source');ap.add_argument('--plan');ap.add_argument('--output',required=True)
     ap.add_argument('--limit-pages',type=int);ap.add_argument('--no-ocr',action='store_true')
+    ap.add_argument('--exclude',action='append',default=[],help='排除原件目录下已确认的旧输出子目录，可重复指定')
     args=ap.parse_args()
     if args.action=='prepare':
         if not args.source:ap.error('prepare需要--source')
-        result=prepare(args.source,args.output,args.limit_pages,args.no_ocr)
+        result=prepare(args.source,args.output,args.limit_pages,args.no_ocr,args.exclude)
     else:
         if not args.plan:ap.error('split需要--plan')
         result=split(json.loads(Path(args.plan).read_text(encoding='utf-8-sig')),args.output)

@@ -140,6 +140,15 @@ class Rules(unittest.TestCase):
 
 
 class Files(unittest.TestCase):
+    def test_明确排除旧输出避免重复识别(self):
+        from 预处理拆分 import prepare
+        import pymupdf
+        base=Path(tempfile.mkdtemp(prefix='排除旧输出测试_'));src=base/'源';old=src/'旧拆分';old.mkdir(parents=True)
+        doc=pymupdf.open();doc.new_page();doc.save(src/'原件.pdf');doc.close()
+        (old/'旧文件.pdf').write_bytes((src/'原件.pdf').read_bytes())
+        out=prepare(src,base/'输出',no_ocr=True,exclude=['旧拆分'])
+        self.assertEqual(list(out['files']),['原件.pdf']);self.assertEqual(out['excluded'],['旧拆分'])
+
     def test_同来源非连续附件可归回任务(self):
         from 预处理拆分 import split
         from 文件保护 import digest
@@ -165,7 +174,8 @@ class Files(unittest.TestCase):
         doc=pymupdf.open();p=doc.new_page();p.insert_text((50,50),'Readable valid document with enough text to avoid OCR.');doc.save(src/'1可读.pdf');doc.close()
         value=prepare(src,base/'输出',no_ocr=True)
         self.assertEqual(len(value['pages']),1);self.assertEqual(len(value['file_errors']),1)
-        cached=next((base/'输出/缓存').glob('*.json'));cached.write_bytes(b'broken')
+        from 文件保护 import write_bytes
+        cached=next((base/'输出/缓存').glob('*.json'));write_bytes(cached,b'broken')
         again=prepare(src,base/'输出',no_ocr=True)
         self.assertEqual(len(again['pages']),1);self.assertTrue(again['pages'][0]['image'])
 
