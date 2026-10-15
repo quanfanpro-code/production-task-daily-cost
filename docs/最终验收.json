@@ -1,0 +1,22 @@
+{
+  "checks": [
+    {
+      "check": "测试全流程.py",
+      "exit_code": 0,
+      "output": "test_同来源非连续附件可归回任务 (__main__.Files.test_同来源非连续附件可归回任务) ... ok\ntest_坏文件与坏缓存不拖停其他页面 (__main__.Files.test_坏文件与坏缓存不拖停其他页面) ... ok\ntest_拆分页数来源和漏页拒绝 (__main__.Files.test_拆分页数来源和漏页拒绝) ... ok\ntest_文件备份与路径防越界 (__main__.Files.test_文件备份与路径防越界) ... ok\ntest_明确排除旧输出避免重复识别 (__main__.Files.test_明确排除旧输出避免重复识别) ... ok\ntest_生成真日期六列和完整留痕 (__main__.Files.test_生成真日期六列和完整留痕) ... ok\ntest_重复件可追溯且来源变动拒绝 (__main__.Files.test_重复件可追溯且来源变动拒绝) ... ok\ntest_仅计划检验取完成当天 (__main__.Rules.test_仅计划检验取完成当天) ... ok\ntest_估算检验不能冒充实际起点 (__main__.Rules.test_估算检验不能冒充实际起点) ... ok\ntest_候选循环胜负不按输入顺序选择 (__main__.Rules.test_候选循环胜负不按输入顺序选择) ... ok\ntest_只有实际检验日期也能交付 (__main__.Rules.test_只有实际检验日期也能交付) ... ok\ntest_只有计划完成日也能交付 (__main__.Rules.test_只有计划完成日也能交付) ... ok\ntest_同工序多次记录合并同日 (__main__.Rules.test_同工序多次记录合并同日) ... ok\ntest_同日不同工序分别计入 (__main__.Rules.test_同日不同工序分别计入) ... ok\ntest_实写和时点插值留痕不同 (__main__.Rules.test_实写和时点插值留痕不同) ... ok\ntest_实际明确区间允许不同工序重叠 (__main__.Rules.test_实际明确区间允许不同工序重叠) ... ok\ntest_工序时点按日期排序且跨工序共享交接日 (__main__.Rules.test_工序时点按日期排序且跨工序共享交接日) ... ok\ntest_已填写的推定检验日期也不得早于加工 (__main__.Rules.test_已填写的推定检验日期也不得早于加工) ... ok\ntest_并行行数不能当工期 (__main__.Rules.test_并行行数不能当工期) ... ok\ntest_异常183天边界整任务互斥分流 (__main__.Rules.test_异常183天边界整任务互斥分流) ... ok\ntest_明确同日起止不能回推 (__main__.Rules.test_明确同日起止不能回推) ... ok\ntest_有计划工序缺日期仍补齐 (__main__.Rules.test_有计划工序缺日期仍补齐) ... ok\ntest_有记录缺日期必须补齐 (__main__.Rules.test_有记录缺日期必须补齐) ... ok\ntest_检验无日期采用交期并顺延 (__main__.Rules.test_检验无日期采用交期并顺延) ... ok\ntest_空白任务仍留痕 (__main__.Rules.test_空白任务仍留痕) ... ok\ntest_补齐后起点不能晚于完成 (__main__.Rules.test_补齐后起点不能晚于完成) ... ok\ntest_计划补齐且实际优先 (__main__.Rules.test_计划补齐且实际优先) ... ok\ntest_跨年区间 (__main__.Rules.test_跨年区间) ... ok\ntest_跨月逐日且不设14天截断 (__main__.Rules.test_跨月逐日且不设14天截断) ... ok\ntest_输入反序结果一致 (__main__.Rules.test_输入反序结果一致) ... ok\n\n----------------------------------------------------------------------\nRan 30 tests in 1.104s\n\nOK\n"
+    },
+    {
+      "check": "quick_validate.py",
+      "exit_code": 0,
+      "output": "Skill is valid!\n"
+    }
+  ],
+  "date": "2026-10-15",
+  "independent_valid_runs": 9,
+  "license": "AGPL-3.0",
+  "paired_votes": "3-0 better",
+  "readme_no_code_blocks": true,
+  "rules_version": "2026-10-15.3",
+  "tests": 30,
+  "text_links_privacy_syntax": "通过"
+}
