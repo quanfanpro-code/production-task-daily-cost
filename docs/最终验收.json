@@ -12,11 +12,151 @@
     }
   ],
   "date": "2026-10-15",
-  "independent_valid_runs": 9,
+  "independent_valid_runs": 12,
   "license": "AGPL-3.0",
   "paired_votes": "3-0 better",
   "readme_no_code_blocks": true,
   "rules_version": "2026-10-15.3",
   "tests": 30,
-  "text_links_privacy_syntax": "通过"
+  "text_links_privacy_syntax": "通过",
+  "post_optimization_score": 80.5,
+  "post_score_target_commit": "92450ad5cdcc9301dd0931995dd319934851885b",
+  "post_score_tests": {
+    "tests_passed": 30,
+    "test_exit_code": 0,
+    "prompts": [
+      {
+        "prompt_id": "逐日",
+        "mode": "实际执行",
+        "normal_rows": 9,
+        "abnormal_rows": 0,
+        "trace_rows": 10,
+        "tasks": [
+          {
+            "abnormal": false,
+            "last_process_date": "2026-02-04",
+            "row_count": 9,
+            "span_days": 7,
+            "start": "2026-01-29",
+            "start_basis": "生产计划领料/下料",
+            "task_no": "示例-001",
+            "warnings": []
+          }
+        ],
+        "exact_row_set_matches_independent_expected": true,
+        "six_columns_true_dates_unique": true,
+        "per_day_trace_coverage": true,
+        "report_counts_reconciled": true,
+        "baseline_daily_rows_equal": true,
+        "baseline_trace_rows": 4,
+        "workbook": "[本次实测目录]\\逐日\\生产任务_成本逐日明细.xlsx",
+        "report": "[本次实测目录]\\逐日\\特殊情况汇报.md"
+      },
+      {
+        "prompt_id": "边界",
+        "mode": "实际执行",
+        "normal_rows": 183,
+        "abnormal_rows": 184,
+        "trace_rows": 371,
+        "tasks": [
+          {
+            "abnormal": false,
+            "last_process_date": "2026-01-20",
+            "row_count": 1,
+            "span_days": 20,
+            "start": "2026-01-01",
+            "start_basis": "生产计划领料/下料",
+            "task_no": "明确同日",
+            "warnings": []
+          },
+          {
+            "abnormal": false,
+            "last_process_date": null,
+            "row_count": 0,
+            "span_days": 0,
+            "start": null,
+            "start_basis": "无日期且无记录",
+            "task_no": "空白样例",
+            "warnings": []
+          },
+          {
+            "abnormal": false,
+            "last_process_date": "2026-07-01",
+            "row_count": 182,
+            "span_days": 182,
+            "start": "2026-01-01",
+            "start_basis": "生产计划领料/下料",
+            "task_no": "边界182",
+            "warnings": []
+          },
+          {
+            "abnormal": true,
+            "last_process_date": "2026-07-02",
+            "row_count": 184,
+            "span_days": 183,
+            "start": "2026-01-01",
+            "start_basis": "生产计划领料/下料",
+            "task_no": "边界183",
+            "warnings": []
+          }
+        ],
+        "exact_row_set_matches_independent_expected": true,
+        "six_columns_true_dates_unique": true,
+        "per_day_trace_coverage": true,
+        "report_counts_reconciled": true,
+        "baseline_daily_rows_equal": true,
+        "baseline_trace_rows": 8,
+        "workbook": "[本次实测目录]\\边界\\生产任务_成本逐日明细.xlsx",
+        "report": "[本次实测目录]\\边界\\特殊情况汇报.md"
+      },
+      {
+        "prompt_id": "拆分",
+        "mode": "实际执行",
+        "normal_rows": 9,
+        "abnormal_rows": 0,
+        "trace_rows": 10,
+        "tasks": [
+          {
+            "abnormal": false,
+            "last_process_date": "2026-06-08",
+            "row_count": 9,
+            "span_days": 8,
+            "start": "2026-06-01",
+            "start_basis": "生产计划领料/下料",
+            "task_no": "SAMPLE-20260601001",
+            "warnings": [
+              "第3/4页为同任务重复扫描，选第1/2页完整来源；第5页未知附件单独保留，未编造任务或生产发生。"
+            ]
+          }
+        ],
+        "exact_row_set_matches_independent_expected": true,
+        "six_columns_true_dates_unique": true,
+        "per_day_trace_coverage": true,
+        "report_counts_reconciled": true,
+        "baseline_daily_rows_equal": true,
+        "baseline_trace_rows": 4,
+        "workbook": "[本次实测目录]\\拆分\\交付\\生产任务_成本逐日明细.xlsx",
+        "report": "[本次实测目录]\\拆分\\交付\\特殊情况汇报.md",
+        "page_flow": {
+          "source_pages": 5,
+          "kept_task_pages": 2,
+          "duplicate_pages": 2,
+          "unknown_kept_pages": 1,
+          "every_source_page_assigned_once": true,
+          "source_copy_unchanged": true,
+          "prepare_model_problem": "",
+          "uncertain_direction_pages": [
+            5
+          ],
+          "resolution": "已阅图确认第5页正向，独立保留未知附件",
+          "map": "[本次实测目录]\\拆分\\已拆分\\拆分清单.json",
+          "extraction_basis": "[本次实测目录]\\拆分\\数据提取依据.json"
+        }
+      }
+    ],
+    "skill_hash_files_checked": 23,
+    "skill_hashes_unchanged": true,
+    "commit_after": "92450ad5cdcc9301dd0931995dd319934851885b",
+    "scope": "3例均为合成资料，其中第3例为含文字层的合成PDF；不是整批真实手写识别验证。"
+  }
 }

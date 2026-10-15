@@ -3,3 +3,4 @@ timestamp	commit	skill	old_score	new_score	status	dimension	note	eval_mode
 2026-10-15	mixed	production-task-daily-cost	-	-	excluded	-	开发目录并发改动，混合版本3例作废；已固定版本重跑	full_test
 2026-10-15	3aa1b0f	production-task-daily-cost	78.0	3-0 better	keep	5	A clear/B clear/C slight；仅SKILL执行核对文字，程序修复单列	paired
 2026-10-15	3aa1b0f	production-task-daily-cost	-	-	verified	8	固定新版3例实际输出与固定初版一致；未证明手写精度提升	full_test
+2026-10-15	92450ad	production-task-daily-cost	78.0	80.5	rescored	all	独立新评审未读旧分；当前3例实际执行和30项验收通过；跨评审分差仅参考，仍保留前轮配对裁断	full_test
