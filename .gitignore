@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+运行结果/
+真实资料/
+*.partial

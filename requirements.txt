@@ -1,0 +1,7 @@
+PyMuPDF>=1.26
+Pillow>=11
+numpy>=2
+onnxruntime>=1.22
+rapidocr-onnxruntime==1.2.3
+xlsxwriter>=3.2
+openpyxl>=3.1

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "delivery_date": "2026-02-05",
+      "material": "石英",
+      "material_date": "2026-01-29",
+      "product_name": "示例零件",
+      "records": [
+        {
+          "date": "2026-02-02",
+          "kind": "point",
+          "process": "精磨",
+          "raw": "完成2月2日",
+          "source": {
+            "file": "合成资料.pdf",
+            "location": "精磨第1行",
+            "page": 2
+          }
+        },
+        {
+          "date": "2026-02-04",
+          "kind": "point",
+          "process": "双轴",
+          "raw": "完成2月4日",
+          "source": {
+            "file": "合成资料.pdf",
+            "location": "双轴第1行",
+            "page": 2
+          }
+        },
+        {
+          "date": null,
+          "kind": "inspection",
+          "process": "成品检验",
+          "raw": "有检验结果，日期空白",
+          "source": {
+            "file": "合成资料.pdf",
+            "page": 3
+          }
+        }
+      ],
+      "spec": "10×20",
+      "task_no": "示例-001"
+    }
+  ]
+}

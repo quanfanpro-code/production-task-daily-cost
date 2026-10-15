@@ -1,0 +1,67 @@
+{
+  "tasks": [
+    {
+      "material_date": "2026-01-01",
+      "records": [
+        {
+          "date": "2026-07-01",
+          "kind": "point",
+          "process": "精磨",
+          "raw": "完成7月1日",
+          "source": {
+            "file": "合成边界.pdf",
+            "page": 1
+          }
+        }
+      ],
+      "task_no": "边界182"
+    },
+    {
+      "material_date": "2026-01-01",
+      "records": [
+        {
+          "date": "2026-07-02",
+          "kind": "point",
+          "process": "精磨",
+          "raw": "完成7月2日",
+          "source": {
+            "file": "合成边界.pdf",
+            "page": 2
+          }
+        },
+        {
+          "date": "2026-07-10",
+          "kind": "inspection",
+          "process": "成品检验",
+          "raw": "检验7月10日",
+          "source": {
+            "file": "合成边界.pdf",
+            "page": 2
+          }
+        }
+      ],
+      "task_no": "边界183"
+    },
+    {
+      "material_date": "2026-01-01",
+      "records": [
+        {
+          "date": "2026-01-20",
+          "end": "2026-01-20",
+          "kind": "range",
+          "process": "双轴",
+          "raw": "开始与完成均1月20日",
+          "source": {
+            "file": "合成边界.pdf",
+            "page": 3
+          }
+        }
+      ],
+      "task_no": "明确同日"
+    },
+    {
+      "records": [],
+      "task_no": "空白样例"
+    }
+  ]
+}
