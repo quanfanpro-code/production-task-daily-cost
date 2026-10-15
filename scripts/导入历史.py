@@ -62,7 +62,8 @@ def migrate(folder,batch_date):
                 kind='note'
             elif proc not in PROCS:kind='note';reason='备注/交接非已确定独立大工序；原记录完整保留，回归不冒充最终重识别'
             if proc in ('成品检','成品检验'):kind='inspection';proc='成品检验'
-            t['records'].append({'process':proc,'kind':kind,'date':r.get('date'),'end':r.get('date_end'),
+            destination=t.setdefault('notes',[]) if kind=='note' else t['records']
+            destination.append({'process':proc,'kind':kind,'date':r.get('date'),'end':r.get('date_end'),
                                  'source':source,'raw':r,'reason':reason,'estimated':bool('辨' in proc or '估为' in reason)})
         for name,v in (plan.get('process_plan_dates') or {}).items():
             if any(w in name for w in ['签署','审核','批准','标准化','检图','会签']):continue

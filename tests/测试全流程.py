@@ -132,11 +132,42 @@ class Rules(unittest.TestCase):
         value=task([],plan=[{'process':'精磨','end':'2026-02-02'}]);value.pop('start')
         self.assertEqual(len(self.run_task(value)['normal']),1)
 
-    def test_已填写的推定检验日期也不得早于加工(self):
-        for rs,plan in [([record(),record('成品检验','2026-01-02','inspection',estimated=True)],[]),
-                        ([record()],[{'process':'成品检验','end':'2026-01-02'}])]:
-            out=self.run_task(task(rs,plan=plan))
-            self.assertEqual([r['date'] for r in out['normal'] if r['process']=='成品检验'],['2026-01-03'])
+    def test_原件检验日期估读仍保留原日(self):
+        out=self.run_task(task([record(),record('成品检验','2026-01-02','inspection',estimated=True,raw='检验1.2')]))
+        self.assertEqual([r['date'] for r in out['normal'] if r['process']=='成品检验'],['2026-01-02'])
+
+    def test_计划补出的检验日期早于加工仍顺延(self):
+        out=self.run_task(task([record()],plan=[{'process':'成品检验','end':'2026-01-02'}]))
+        self.assertEqual([r['date'] for r in out['normal'] if r['process']=='成品检验'],['2026-01-03'])
+
+    def test_程序不按编号或相邻日期改写模型采用年月(self):
+        v=task([record(date='2025-03-22',kind='range',end='2025-08-22',estimated=True),
+                record('双轴','2025-08-25')],start='2025-03-20')
+        v['task_no']='TASK-20250815001'
+        out=self.run_task(v)
+        self.assertEqual(out['tasks'][0]['start'],'2025-03-20')
+        self.assertEqual(len([r for r in out['normal'] if r['process']=='精磨']),154)
+        self.assertEqual(out['date_checks'],[])
+
+    def test_程序不凭原文关键词覆盖明确区间(self):
+        out=self.run_task(task([record(date='2026-01-03',kind='range',end='2026-01-05',raw='加工时间 加工节点')]))
+        self.assertEqual([r['date'] for r in out['normal']],['2026-01-03','2026-01-04','2026-01-05'])
+
+    def test_程序不凭原文关键词覆盖完成时点(self):
+        out=self.run_task(task([record(date='2026-01-03',end='2026-01-05',raw='开始时间 结束时间')]))
+        self.assertEqual([r['date'] for r in out['normal']],['2026-01-01','2026-01-02','2026-01-03','2026-01-04','2026-01-05'])
+
+    def test_仅填结束日仍按已确定区间补齐(self):
+        out=self.run_task(task([record(date=None,kind='range',end='2026-01-05')]))
+        self.assertEqual([r['date'] for r in out['normal']],['2026-01-01','2026-01-02','2026-01-03','2026-01-04','2026-01-05'])
+        self.assertTrue(any(r['nature']=='实际明确区间' for r in out['trace']))
+
+    def test_起点不因另一记录结束日估读而误移到后续工序(self):
+        v=task([record('精磨','2026-04-28','range',end='2026-04-29',estimated=True),
+                record('双轴','2026-04-30','range',end='2026-05-05')])
+        v.pop('start');v['task_no']='TASK-20260425004';out=self.run_task(v)
+        self.assertEqual(out['tasks'][0]['start'],'2026-04-28')
+        self.assertEqual(out['date_checks'],[])
 
     def test_估算检验不能冒充实际起点(self):
         value=task([record(date=None),record('成品检验','2026-01-01','inspection',estimated=True)],delivery_date='2026-02-01');value.pop('start')
@@ -264,6 +295,30 @@ class Files(unittest.TestCase):
         self.assertEqual(ws['B2'].value,'=1+1')
         self.assertEqual(export.verify_workbook(path)['normal_rows'],3)
         wb.close()
+
+
+class 返修归类(unittest.TestCase):
+    def test_表内区间照常且表外返修不受整页表头覆盖(self):
+        from 日期推算 import build
+        rows=[record(date='2026-01-05',kind='range',end='2026-01-05'),
+              record(date='2026-01-07',kind='point',end='2026-01-08')]
+        pages=[{'source_file':'合成单据.pdf','page':2,'text':'开始时间 结束时间'}]
+        result=build([task(rows,start='2026-01-05')],pages=pages)
+        self.assertEqual({r['date'] for r in result['normal']},
+                         {'2026-01-05','2026-01-06','2026-01-07','2026-01-08'})
+
+    def test_明确返修区间仍保留区间外空档(self):
+        from 日期推算 import build
+        rows=[record(date='2026-01-05',kind='range',end='2026-01-05'),
+              record(date='2026-01-07',kind='range',end='2026-01-08')]
+        result=build([task(rows,start='2026-01-05')])
+        self.assertNotIn('2026-01-06',{r['date'] for r in result['normal']})
+
+    def test_非加工备注不因写日期变成新工序(self):
+        from 日期推算 import build
+        rows=[record(date='2026-01-05',kind='range',end='2026-01-05')]
+        result=build([task(rows,start='2026-01-05',notes=['交接1.8，无加工或返修'])])
+        self.assertEqual({r['date'] for r in result['normal']},{'2026-01-05'})
 
 
 if __name__=='__main__':

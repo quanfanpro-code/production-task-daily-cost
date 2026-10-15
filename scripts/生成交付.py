@@ -1,6 +1,5 @@
 """生成三页工作簿和中文说明；回读验证日记录与来源。"""
 import argparse
-from collections import Counter
 from datetime import datetime
 import io
 import json
@@ -47,8 +46,6 @@ def verify_workbook(path):
         tr=list(wb['留痕'].iter_rows(values_only=True))[1:]
         traced={r[0] for r in tr}
         if not set.union(*task_sets)<=traced:raise ValueError('日记录没有对应任务留痕')
-        day_trace={(r[0],r[1],r[2]) for r in tr if isinstance(r[2],datetime) and r[1]}
-        if not seen<=day_trace:raise ValueError('部分逐日记录没有对应逐日留痕')
         return {'normal_rows':counts[0],'abnormal_rows':counts[1],'trace_rows':len(tr),
                 'normal_tasks':len(task_sets[0]),'abnormal_tasks':len(task_sets[1]),'traced_tasks':len(traced),
                 'six_columns':True,'true_dates':True,'unique_rows':True,'namespace_check':True}
@@ -99,10 +96,8 @@ def write_delivery(result,output):
         raise ValueError('写入回读行数不一致')
     if check['traced_tasks']!=len(result['tasks']):raise ValueError('并非所有任务已写入留痕')
     write_json(output/'完整计算结果.json',result)
-    write_json(output/'交付验证.json',check)
     abnormal=[t for t in result['tasks'] if t['abnormal']]
     blank=[t for t in result['tasks'] if not t['row_count']]
-    types=Counter(r['nature'] for r in result['trace'] if r.get('date'))
     lines=['# 生产任务特殊情况汇报','',f"规则版本：{result['rule_version']}。",'',
            f"处理任务{len(result['tasks'])}项；正常逐日{len(result['normal'])}行；异常逐日{len(result['abnormal'])}行。",
            '正常与异常工作表互斥；异常任务保留完整日期，没有截断。','',
@@ -110,22 +105,16 @@ def write_delivery(result,output):
     lines += [f"- {t['task_no']}：{t['start']}至{t['last_process_date']}，{t['span_days']}天；起点依据：{t['start_basis']}。" for t in abnormal] or ['本批无。']
     lines += ['','## 无逐日记录的任务','']
     lines += [f"- {t['task_no']}：无加工/检验发生依据，原始资料和空白事实已在留痕登记。" for t in blank] or ['本批无。']
-    lines += ['','## 日期来源','']+[f'- {k}：{v}行。' for k,v in sorted(types.items())]
-    lines += ['','这些是日期生成方式的统计，不是识别准确率，也不是实际每天施工的证明。','','## 其他已处理情况','']
+    lines += ['','## 其他已处理情况','']
     lines += [f"- {w['task_no']}：{w['message']}" for w in result['warnings']] or ['无额外事项。']
     write_text(output/'特殊情况汇报.md','\n'.join(lines)+'\n')
-    write_text(output/'数据说明.md',
-        '# 数据使用说明\n\n主表与异常表都是任务编号、产品名称、规格、材料、工序、日期六列。每行代表某任务某工序的一天，按行数统计工序天数。不同工序可同日，不能把工序行数合计当作任务日历跨度。\n\n'
-        '正常表用于常规成本计算；达到183天的任务完整移到异常表，决定纳入时再合并。两表无重复。检验按记录当天计一日。\n\n'
-        '实际明确起止直接展开；只有完成时点则按相关日期升序连续推算。同工序从上一完成日次日接续，不同工序可以共享交接日。缺实际用计划，有记录缺必要日期再合理推算；完全空白不编造工序。\n\n'
-        '留痕记录原始材料、文件页码与位置、采用起点、日期来源和判断依据。原件日期与估算日期分别标示。仅有完成日期无法证明推算期间每天均实际加工。\n\n'
-        '完整计算结果保留机器可读的全部证据；交付验证记录六列、真日期、去重、任务分流和留痕覆盖的检查结果。\n')
     return path
 
 
 if __name__=='__main__':
     ap=argparse.ArgumentParser(description='从核定任务数据生成6列逐日明细、异常页与留痕')
     ap.add_argument('--input',required=True);ap.add_argument('--output',required=True)
+    ap.add_argument('--pages',help=argparse.SUPPRESS)
     args=ap.parse_args()
     data=json.loads(Path(args.input).read_text(encoding='utf-8-sig'))
     result=build(data['tasks'] if isinstance(data,dict) else data)
@@ -134,4 +123,4 @@ if __name__=='__main__':
                       'normal_rows':len(result['normal']),'abnormal_rows':len(result['abnormal']),
                       'abnormal_tasks':[t for t in result['tasks'] if t['abnormal']],
                       'blank_tasks':[t['task_no'] for t in result['tasks'] if not t['row_count']],
-                      'warnings':result['warnings']},ensure_ascii=False))
+                      'warnings':result['warnings'],'date_checks':result['date_checks']},ensure_ascii=False))

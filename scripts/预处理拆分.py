@@ -8,8 +8,24 @@ import re
 
 from 文件保护 import digest, safe_child, separate_output, write_bytes, write_json
 
-VERSION='2026-10-15.3'
+VERSION='2026-10-15.5'
 PAGE_VERSION='2026-10-15.1'  # 保持已有页缓存身份，范围升级不重做成功识别。
+
+
+def page_kind(text):
+    text=''.join(text.split())
+    if '生产单编号' in text or ('生产' in text and ('任务' in text or '计划' in text)):
+        return '生产计划'
+    if '生产记录表' in text:return '工序记录'
+    if any(s in text for s in ('成品检验记录表','产品来料检测记录表')):return '检验记录'
+    if any(s in text for s in ('生产记录','工序记录','加工记录','工序名称')):
+        return '工序记录'
+    if any(s in text for s in ('检验','检测记录','领料时间')):
+        return '检验记录'
+    if ('技术要求' in text and any(s in text for s in ('CAD','图号','会签','制图'))) or (
+        '对零件的要求' in text and sum(s in text for s in ('光学均匀性','光吸收系数','条纹度','气泡度','双折射'))>=3):
+        return '图纸规范'
+    return '候选附件'
 
 
 def prepare(source, output, limit=None, no_ocr=False, exclude=None,
@@ -17,6 +33,7 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
     import pymupdf
     from PIL import Image
     from 方向识别 import 识别器
+    from 区域裁剪 import cost_regions,page_view
     source=Path(source).resolve()
     if not source.exists():raise FileNotFoundError('原件路径不存在：'+str(source))
     if source.is_file():
@@ -76,7 +93,10 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
                     elif item.get('ocr') or not item.get('problem'):
                         regions={'header':{'status':'ok','rows':item.get('ocr',[]),'error':''}}
                 wanted=[] if no_ocr or (selected is not None and (rel,n) not in selected) or len(native)>=30 else ['header']
-                if wanted and ocr_scope=='full':wanted.append('body')
+                known_kind=page_kind(item.get('text',''))
+                portrait=(page.rect.height>page.rect.width) != (item.get('rotation',0) in (90,270))
+                needs_body=known_kind=='生产计划' or (portrait and known_kind in ('工序记录','检验记录'))
+                if wanted and (ocr_scope=='full' or needs_body):wanted.append('body')
                 pending=[name for name in wanted if name not in regions or
                          (regions[name]['status']=='failed' and retry_failed)]
                 if not retry_failed and any(r['status']=='failed' for r in regions.values()):pending=[]
@@ -103,6 +123,8 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
                 if pending and upright is None:
                     with Image.open(item['image']) as im:upright=im.convert('RGB')
                 for name in pending:
+                    if name=='body' and page_kind('\n'.join(str(r[1]) for r in regions.get('header',{}).get('rows',[])))=='图纸规范':
+                        continue
                     top=0 if name=='header' else round(upright.height*.45)
                     bottom=round(upright.height*.45) if name=='header' else upright.height
                     try:
@@ -114,6 +136,10 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
                         rows,_=reader(np.asarray(crop)[:,:,::-1])
                         shifted=[[[[float(x),float(y)+top] for x,y in row[0]],str(row[1]),float(row[2])] for row in (rows or [])]
                         regions[name]={'status':'ok','rows':shifted,'error':''}
+                        if name=='header' and ocr_scope=='header' and 'body' not in regions and 'body' not in pending:
+                            header_kind=page_kind('\n'.join(r[1] for r in shifted))
+                            if header_kind=='生产计划' or (upright.height>upright.width and header_kind in ('工序记录','检验记录')):
+                                pending.append('body')
                     except Exception as exc:
                         regions[name]={'status':'failed','rows':[],'error':f'{type(exc).__name__}: {exc}'}
                         break
@@ -121,25 +147,32 @@ def prepare(source, output, limit=None, no_ocr=False, exclude=None,
                 text=native if len(native)>=30 else ('\n'.join(str(r[1]) for r in ocr) or native)
                 coverage='full' if len(native)>=30 or all(regions.get(k,{}).get('status')=='ok' for k in ('header','body')) else 'header' if regions.get('header',{}).get('status')=='ok' else 'none'
                 problem=cache_problem+'；'.join('识别失败，保留成功结果，诊断后可显式重试：'+r['error'] for r in regions.values() if r['status']=='failed')
-                title='生产计划' if ('生产' in text and ('任务' in text or '计划' in text)) else '候选附件'
+                title=page_kind(text)
                 numbers=sorted(set(re.findall(r'(?<!\d)\d{8}[-－]?\d{1,6}(?!\d)',text)))
+                if item.get('text')!=text or item.get('candidate_type')!=title:
+                    item.pop('cost_region',None)
                 item.update(source_file=rel,page=n,sha256=sha,candidate_type=title,
                             number_candidates=numbers,text=text,ocr=ocr,problem=problem,
                             ocr_regions=regions,ocr_coverage=coverage,
                             text_source='pdf_text' if len(native)>=30 else 'local_ocr',
                             ocr_engine='RapidOCR 本机默认参数',page_cache_key=key)
+                item['cost_region']=cost_regions(item,output/'区域')
                 write_json(cache,item);pages.append(item)
         if limit and len(pages)>=limit:break
     if selected is not None and selected-seen:raise ValueError('指定页不在本次原件范围内：'+str(sorted(selected-seen)))
     index={'version':VERSION,'source_root':str(source),'files':files,'pages':pages,
         'partial':bool(limit),'file_errors':file_errors,'model_problem':model_problem,'excluded':exclude or [],
-        'notice':'候选不是最终归属；agent核对原图后另写拆分方案。文件错误须单独汇报，不能冒充全批已完成。'}
+        'notice':'原页与识别缓存全部保留；页面分类用于筛选，文件错误单独记录。'}
     write_json(output/'准备索引.json',index)
     # 提取时只读一份精简视图，坐标与区域缓存仍在准备索引中供实际疑点查阅。
-    fields=('source_file','page','image','rotation','candidate_type','number_candidates',
-            'text','ocr_coverage','direction_uncertain','problem')
+    selected_pages=[]
+    for p in pages:
+        if p.get('candidate_type')=='图纸规范':continue
+        selected_pages.append(page_view(p))
     write_json(output/'提取视图.json',{'source_root':str(source),'files':files,
-               'pages':[{k:p[k] for k in fields if k in p} for p in pages],
+               'pages':selected_pages,
+               'excluded_pages':[{'source_file':p['source_file'],'page':p['page'],'reason':'图纸规范'}
+                                 for p in pages if p.get('candidate_type')=='图纸规范'],
                'file_errors':file_errors,'partial':bool(limit),'model_problem':model_problem})
     return index
 
