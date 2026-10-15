@@ -138,6 +138,12 @@ class Rules(unittest.TestCase):
             out=self.run_task(task(rs,plan=plan))
             self.assertEqual([r['date'] for r in out['normal'] if r['process']=='成品检验'],['2026-01-03'])
 
+    def test_估算检验不能冒充实际起点(self):
+        value=task([record(date=None),record('成品检验','2026-01-01','inspection',estimated=True)],delivery_date='2026-02-01');value.pop('start')
+        out=self.run_task(value)
+        self.assertEqual(out['tasks'][0]['start'],'2026-02-01')
+        self.assertEqual(out['tasks'][0]['span_days'],1)
+
 
 class Files(unittest.TestCase):
     def test_明确排除旧输出避免重复识别(self):

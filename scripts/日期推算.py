@@ -6,7 +6,7 @@ import itertools
 import json
 import re
 
-VERSION='2026-10-15.2'
+VERSION='2026-10-15.3'
 ORDER=['精磨','研磨','双轴','环抛','环磨','离子束','成品检验']
 ALIASES={'研磨':'精磨','成品检':'成品检验','出货检验':'成品检验'}
 
@@ -103,7 +103,7 @@ def build(tasks):
                     (number_date(no),'任务编号日期估算'),
                     (min(actual,default=None),'最早加工日期估算'),
                     (min([day(p.get('end')) for p in plans if day(p.get('end'))],default=None),'计划完成日期兜底估算'),
-                    (min([day(r.get('date')) for r in records if r['kind']=='inspection' and day(r.get('date'))],default=None),'检验日期兜底估算'),
+                    (min([day(r.get('date')) for r in records if r['kind']=='inspection' and not r.get('estimated') and day(r.get('date'))],default=None),'实际检验日期兜底估算'),
                     (day(t.get('delivery_date')),'交付日期兜底估算'),
                     (day(t.get('batch_date')),'批次参考日期兜底估算')]
         start,basis=next(((d,b) for d,b in candidates if d),(None,'无日期且无记录'))
