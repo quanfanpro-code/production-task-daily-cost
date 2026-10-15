@@ -132,8 +132,43 @@ class Rules(unittest.TestCase):
         value=task([],plan=[{'process':'精磨','end':'2026-02-02'}]);value.pop('start')
         self.assertEqual(len(self.run_task(value)['normal']),1)
 
+    def test_已填写的推定检验日期也不得早于加工(self):
+        for rs,plan in [([record(),record('成品检验','2026-01-02','inspection',estimated=True)],[]),
+                        ([record()],[{'process':'成品检验','end':'2026-01-02'}])]:
+            out=self.run_task(task(rs,plan=plan))
+            self.assertEqual([r['date'] for r in out['normal'] if r['process']=='成品检验'],['2026-01-03'])
+
 
 class Files(unittest.TestCase):
+    def test_同来源非连续附件可归回任务(self):
+        from 预处理拆分 import split
+        from 文件保护 import digest
+        import pymupdf
+        base=Path(tempfile.mkdtemp(prefix='错位附件测试_'));src=base/'源';src.mkdir()
+        doc=pymupdf.open()
+        for text in ['TASK-A','TASK-B','RECORD-A']:
+            p=doc.new_page();p.insert_text((50,50),text)
+        doc.save(src/'错位.pdf');doc.close()
+        plan={'source_root':str(src),'files':{'错位.pdf':{'pages':3,'sha256':digest(src/'错位.pdf')}},'segments':[
+            {'source_file':'错位.pdf','start':1,'end':3,'page_numbers':[1,3],'task_no':'A','action':'keep'},
+            {'source_file':'错位.pdf','start':2,'end':2,'task_no':'B','action':'keep'}]}
+        result=split(plan,base/'输出')
+        with pymupdf.open(base/'输出/A.pdf') as d:
+            self.assertEqual(len(d),2);self.assertIn('RECORD-A',d[1].get_text())
+        self.assertEqual(next(r for r in result['pages'] if r['source_page']==3)['output_page'],2)
+
+    def test_坏文件与坏缓存不拖停其他页面(self):
+        from 预处理拆分 import prepare
+        import pymupdf
+        base=Path(tempfile.mkdtemp(prefix='失败恢复测试_'));src=base/'源';src.mkdir()
+        (src/'0坏文件.pdf').write_bytes(b'broken')
+        doc=pymupdf.open();p=doc.new_page();p.insert_text((50,50),'Readable valid document with enough text to avoid OCR.');doc.save(src/'1可读.pdf');doc.close()
+        value=prepare(src,base/'输出',no_ocr=True)
+        self.assertEqual(len(value['pages']),1);self.assertEqual(len(value['file_errors']),1)
+        cached=next((base/'输出/缓存').glob('*.json'));cached.write_bytes(b'broken')
+        again=prepare(src,base/'输出',no_ocr=True)
+        self.assertEqual(len(again['pages']),1);self.assertTrue(again['pages'][0]['image'])
+
     def test_文件备份与路径防越界(self):
         from 文件保护 import backup,write_bytes,safe_child,digest
         base=Path(tempfile.mkdtemp(prefix='文件保护测试_'));path=base/'原文件.txt';path.write_bytes(b'original')

@@ -17,33 +17,52 @@ def prepare(source, output, limit=None, no_ocr=False):
     from 方向识别 import 识别器
     source,output=separate_output(source,output)
     model=Path(__file__).parent/'models/rapid_orientation.onnx'
-    detector=识别器(model)
-    model_hash=digest(model)
+    model_problem=''
+    try:
+        detector=识别器(model);model_hash=digest(model)
+    except Exception as exc:
+        detector=None;model_hash='unavailable';model_problem=f'方向模型不可用，保留原方向供agent查看：{exc}'
     reader=None
-    files={};pages=[]
+    files={};pages=[];file_errors=[]
     for path in sorted(source.rglob('*.pdf')):
         if path.is_relative_to(output):continue
-        rel=path.relative_to(source).as_posix();sha=digest(path)
-        with pymupdf.open(path) as doc:
+        rel=path.relative_to(source).as_posix()
+        try:
+            sha=digest(path);doc=pymupdf.open(path)
+            if doc.needs_pass:
+                doc.close();raise ValueError('加密文件，需要可读取副本')
+        except Exception as exc:
+            file_errors.append({'source_file':rel,'error':str(exc)});continue
+        with doc:
             files[rel]={'pages':len(doc),'sha256':sha}
             for n,page in enumerate(doc,1):
                 if limit and len(pages)>=limit:break
                 key=hashlib.sha256(f'{VERSION}|{sha}|{n}|1800|{not no_ocr}|{model_hash}'.encode()).hexdigest()
                 cache=output/'缓存'/f'{key}.json'
+                cache_problem=''
                 if cache.exists():
-                    item=json.loads(cache.read_text(encoding='utf-8'))
+                    try:item=json.loads(cache.read_text(encoding='utf-8'))
+                    except (ValueError,OSError):
+                        item={};cache_problem='缓存损坏，已重新生成；'
                     # 同内容不同文件共用识别，归属仍逐页登记。
                     item.update(source_file=rel,page=n)
-                    if Path(item['image']).is_file():
+                    if item.get('image') and Path(item['image']).is_file():
                         pages.append(item);continue
-                pix=page.get_pixmap(matrix=pymupdf.Matrix(1800/max(page.rect.width,page.rect.height),1800/max(page.rect.width,page.rect.height)),alpha=False)
-                image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
-                direction=detector.predict(image)
+                try:
+                    pix=page.get_pixmap(matrix=pymupdf.Matrix(1800/max(page.rect.width,page.rect.height),1800/max(page.rect.width,page.rect.height)),alpha=False)
+                    image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
+                except Exception as exc:
+                    pages.append({'source_file':rel,'page':n,'sha256':sha,'problem':'页面渲染失败：'+str(exc),'image':None});continue
+                from 方向识别 import 判断
+                try:direction=detector.predict(image) if detector else 判断(None,0.,model_problem)
+                except Exception as exc:direction=判断(None,0.,'方向判断失败，保留原方向供agent查看：'+str(exc))
                 correction=direction.rotation or 0
                 upright=image.rotate(-correction,expand=True)
                 jpg=output/'页面'/f'{key}.jpg';buf=io.BytesIO();upright.save(buf,format='JPEG',quality=90)
                 write_bytes(jpg,buf.getvalue())
-                text=page.get_text().strip();ocr=[];problem=''
+                try:text=page.get_text().strip()
+                except Exception:text=''
+                ocr=[];problem=cache_problem
                 if len(text)<30 and not no_ocr:
                     try:
                         if reader is None:
@@ -65,7 +84,8 @@ def prepare(source, output, limit=None, no_ocr=False):
                 write_json(cache,item);pages.append(item)
         if limit and len(pages)>=limit:break
     index={'version':VERSION,'source_root':str(source),'files':files,'pages':pages,
-           'partial':bool(limit),'notice':'候选不是最终归属；agent核对原图后另写拆分方案。'}
+        'partial':bool(limit),'file_errors':file_errors,'model_problem':model_problem,
+        'notice':'候选不是最终归属；agent核对原图后另写拆分方案。文件错误须单独汇报，不能冒充全批已完成。'}
     write_json(output/'准备索引.json',index)
     return index
 
@@ -85,7 +105,10 @@ def split(plan,output):
         s=dict(entry);name=s['source_file'];a=s['start'];b=s['end']
         if name not in files or not isinstance(a,int) or not isinstance(b,int) or not 1<=a<=b<=files[name]['pages']:
             raise ValueError('拆分页码或来源无效')
-        current=set(range(a,b+1))
+        chosen=s.get('page_numbers',list(range(a,b+1)))
+        if not isinstance(chosen,list) or not chosen or any(type(n) is not int or not a<=n<=b for n in chosen) or chosen!=sorted(set(chosen)):
+            raise ValueError('指定页列表须非空、升序、不重复且在起止页内')
+        s['page_numbers']=chosen;current=set(chosen)
         if current&coverage[name]:raise ValueError('来源页重复分配：'+name)
         coverage[name]|=current
         s.setdefault('id',name+':'+str(a)+'-'+str(b))
@@ -121,20 +144,20 @@ def split(plan,output):
         if s['action']!='duplicate':
             with pymupdf.open(safe_child(source,s['source_file'])) as doc:
                 out=pymupdf.open()
-                out.insert_pdf(doc,from_page=s['start']-1,to_page=s['end']-1)
-                for k,page in enumerate(out,s['start']):
+                for n in s['page_numbers']:out.insert_pdf(doc,from_page=n-1,to_page=n-1)
+                for k,page in zip(s['page_numbers'],out):
                     page.set_rotation((page.rotation+s.get('rotations',{}).get(str(k),0))%360)
                 data=out.tobytes(garbage=4,deflate=True,no_new_id=True);out.close()
                 path=write_bytes(safe_child(output,s['output_file']),data)
                 with pymupdf.open(path) as check:
-                    if len(check)!=s['end']-s['start']+1:raise ValueError('拆分回读页数不符')
-        for n in range(s['start'],s['end']+1):
+                    if len(check)!=len(s['page_numbers']):raise ValueError('拆分回读页数不符')
+        for output_page,n in enumerate(s['page_numbers'],1):
             maps.append({'source_file':s['source_file'],'source_page':n,'segment':s['id'],
                          'action':s['action'],'task_no':s.get('task_no',''),'output_file':target['output_file'],
-                         'output_page':n-s['start']+1 if s['action']!='duplicate' else None,
+                         'output_page':output_page if s['action']!='duplicate' else None,
                          'reason':s.get('reason',''),'source_sha256':files[s['source_file']]['sha256']})
     result={'version':VERSION,'source_root':str(source),'output_root':str(output),'pages':maps,'segments':normalized,
-            'source_pages':len(maps),'kept_pages':sum(s['end']-s['start']+1 for s in normalized if s['action']!='duplicate')}
+            'source_pages':len(maps),'kept_pages':sum(len(s['page_numbers']) for s in normalized if s['action']!='duplicate')}
     write_json(output/'拆分清单.json',result)
     return result
 

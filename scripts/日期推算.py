@@ -6,7 +6,7 @@ import itertools
 import json
 import re
 
-VERSION='2026-10-15.1'
+VERSION='2026-10-15.2'
 ORDER=['精磨','研磨','双轴','环抛','环磨','离子束','成品检验']
 ALIASES={'研磨':'精磨','成品检':'成品检验','出货检验':'成品检验'}
 
@@ -195,6 +195,9 @@ def build(tasks):
                 d=day(t.get('delivery_date')) or last or start
                 if last and d<last:d=last
                 r['estimated']=True;r['reason']+='；有检验内容无日期，使用交付/最后加工/起点并顺延'
+            if r.get('estimated') and last and d<last:
+                r['reason']+=f'；原推定检验日{d}早于最后加工{last}，顺延至最后加工日'
+                d=last
             put('成品检验',d,r,'检验日期推算' if r.get('estimated') else '实际检验日期',r.get('reason') or '检验按记录当天计一日')
         span_days=(last-start).days+1 if last and start else 1 if days else 0
         abnormal=span_days>=183
